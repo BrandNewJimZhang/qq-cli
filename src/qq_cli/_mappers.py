@@ -20,6 +20,11 @@ SCHEMA_VERSION = 1
 #: a caller asks for the quality axis.
 _QUALITY_LABEL = "128k"
 
+#: QQ serves album art off a stable CDN path keyed by album mid; the
+#: 300x300 rendition matches the panel's hero size. Same field name as
+#: netease-cli's cover — one schema, two resolvers.
+_COVER_URL = "https://y.gtimg.cn/music/photo_new/T002R300x300M000{mid}.jpg"
+
 
 def success_envelope(data: Any) -> dict[str, Any]:
     return {"schema_version": SCHEMA_VERSION, "data": data}
@@ -43,12 +48,14 @@ def map_search(songs: list[Any]) -> list[dict[str, Any]]:
     for song in songs:
         singers = [s.name for s in getattr(song, "singer", []) if getattr(s, "name", "")]
         album = getattr(song, "album", None)
+        album_mid = getattr(album, "mid", "") if album else ""
         rows.append(
             {
                 "id": song.mid,
                 "title": song.name,
                 "artist": " / ".join(singers),
                 "album": getattr(album, "name", "") if album else "",
+                "cover": _COVER_URL.format(mid=album_mid) if album_mid else "",
                 "duration": int(getattr(song, "interval", 0) or 0) * 1000,
             }
         )

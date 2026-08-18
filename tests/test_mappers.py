@@ -27,12 +27,18 @@ class _Named:
         self.name = name
 
 
+class _Album:
+    def __init__(self, name: str, mid: str = "") -> None:
+        self.name = name
+        self.mid = mid
+
+
 class _Song:
-    def __init__(self, mid, name, singers, album, interval):
+    def __init__(self, mid, name, singers, album, interval, album_mid=""):
         self.mid = mid
         self.name = name
         self.singer = [_Named(s) for s in singers]
-        self.album = _Named(album)
+        self.album = _Album(album, album_mid)
         self.interval = interval
 
 
@@ -50,7 +56,7 @@ class _UrlResponse:
 
 def test_map_search_publishes_the_shared_schema():
     songs = [
-        _Song("003aAYrm3GE0Ac", "稻香", ["周杰伦"], "魔杰座", 223),
+        _Song("003aAYrm3GE0Ac", "稻香", ["周杰伦"], "魔杰座", 223, album_mid="002eFUFm2XYZ7z"),
         _Song("mid2", "晴天", ["周杰伦", "费玉清"], "叶惠美", 269),
     ]
 
@@ -61,10 +67,13 @@ def test_map_search_publishes_the_shared_schema():
         "title": "稻香",
         "artist": "周杰伦",
         "album": "魔杰座",
+        "cover": "https://y.gtimg.cn/music/photo_new/T002R300x300M000002eFUFm2XYZ7z.jpg",
         "duration": 223_000,
     }
     # Multiple singers join the same way netease-cli joins them.
     assert tracks[1]["artist"] == "周杰伦 / 费玉清"
+    # No album mid -> no fabricated art URL, same as netease-cli.
+    assert tracks[1]["cover"] == ""
 
 
 def test_map_search_normalises_seconds_to_milliseconds():

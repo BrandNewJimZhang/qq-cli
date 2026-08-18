@@ -32,7 +32,7 @@ The `--id` every verb takes is the track **mid** returned by `search`
 
 | Verb     | `data` shape |
 |----------|--------------|
-| `search` | `[{id, title, artist, album, duration}]` — duration in **milliseconds** (QQ reports seconds; normalised so it matches netease-cli), multiple singers joined with ` / ` |
+| `search` | `[{id, title, artist, album, cover, duration}]` — duration in **milliseconds** (QQ reports seconds; normalised so it matches netease-cli), `cover` an album-art URL or `""`, multiple singers joined with ` / ` |
 | `url`    | `{id, url, quality}` |
 | `lyric`  | `{id, lrc}` — LRC document, `""` when the track has none |
 
