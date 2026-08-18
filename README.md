@@ -17,6 +17,7 @@ pipx install .          # or: pip install .
 
 ```bash
 qq-cli search --keyword "周杰伦 稻香" --limit 20
+qq-cli whoami
 qq-cli url    --id 003aAYrm3GE0Ac
 qq-cli lyric  --id 003aAYrm3GE0Ac
 ```
@@ -33,8 +34,9 @@ The `--id` every verb takes is the track **mid** returned by `search`
 | Verb     | `data` shape |
 |----------|--------------|
 | `search` | `[{id, title, artist, album, cover, duration}]` — duration in **milliseconds** (QQ reports seconds; normalised so it matches netease-cli), `cover` an album-art URL or `""`, multiple singers joined with ` / ` |
-| `url`    | `{id, url, quality}` |
+| `url`    | `{id, url, quality}` — quality is the ladder rung that answered: `flac` / `320k` / `128k` |
 | `lyric`  | `{id, lrc}` — LRC document, `""` when the track has none |
+| `whoami` | `{logged_in, nickname, vip}` — server-verified session verdict (anonymous and rejected credentials both answer `logged_in: false`) |
 
 Failures print one line on stderr and exit non-zero:
 
@@ -64,10 +66,11 @@ takes with `MUSICFOX_COOKIE`.
 
 ## Scope and limits
 
-- **MP3 128k only.** Higher bitrates need a credential and a wider file
-  type; the quality axis stays closed until a caller asks for it
-  (`--quality` is accepted and ignored so the two resolvers share one
-  argv shape).
+- **Quality ladder.** A signed-in session probes `flac` -> `320k` ->
+  `128k` and answers the first rung the account may play; anonymous
+  sessions only probe `128k` (higher rungs always answer empty without
+  a credential). `--quality` is accepted and ignored so the two
+  resolvers share one argv shape.
 - **No unlocking.** A track this account may not play answers exit 4.
 - **Reverse-engineered.** QQ Music publishes no personal-use API;
   upstream can change or break at any time.

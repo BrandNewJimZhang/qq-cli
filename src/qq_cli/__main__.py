@@ -13,7 +13,9 @@ Contract:
 Credentials: search and lyric work anonymously; stream URLs do not (QQ
 answers result=104003 with an empty purl). Export QQ_MUSIC_MUSICID and
 QQ_MUSIC_MUSICKEY from an existing login — this tool deliberately
-implements no login flow of its own.
+implements no login flow of its own. A signed-in session walks the
+quality ladder (flac -> 320k -> 128k) and ``whoami`` reports who the
+credential authenticates as.
 """
 
 from __future__ import annotations
@@ -27,9 +29,11 @@ from typing import Any
 
 from qq_cli._mappers import (
     error_envelope,
+    extract_stream_url,
     map_lyric,
     map_search,
     map_url,
+    map_vip_info,
     success_envelope,
 )
 
@@ -76,14 +80,58 @@ async def _run_search(keyword: str, limit: int) -> list[dict[str, Any]]:
 
 
 async def _run_url(mid: str) -> dict[str, Any]:
+    """Resolve a stream, walking the quality ladder top-down.
+
+    A signed-in session may be entitled to lossless; anonymous sessions
+    only ever get the 128k probe (higher rungs always answer empty
+    without a credential, so probing them would just burn requests).
+    An empty purl on every rung is a refusal, reported plainly.
+    """
     from qqmusic_api import Client
     from qqmusic_api.modules.song import SongApi, SongFileInfo, SongFileType
 
-    async with Client(_credential()) as client:
-        response = await SongApi(client).get_song_urls(
-            [SongFileInfo(mid=mid)], SongFileType.MP3_128
-        )
-        return map_url(mid, response)
+    credential = _credential()
+    ladder = (
+        [(SongFileType.FLAC, "flac"), (SongFileType.MP3_320, "320k"), (SongFileType.MP3_128, "128k")]
+        if credential
+        else [(SongFileType.MP3_128, "128k")]
+    )
+    async with Client(credential) as client:
+        api = SongApi(client)
+        for file_type, label in ladder:
+            response = await api.get_song_urls([SongFileInfo(mid=mid)], file_type)
+            url = extract_stream_url(response)
+            if url:
+                return map_url(mid, url, label)
+    raise ValueError(
+        f"QQ Music returned no playable url for {mid}; most tracks need a "
+        "credential — set QQ_MUSIC_MUSICID and QQ_MUSIC_MUSICKEY (a track "
+        "above the account's plan is also refused)"
+    )
+
+
+async def _run_whoami() -> dict[str, Any]:
+    """Who the stored credential authenticates as.
+
+    Anonymous (no env credential) and rejected/expired credentials both
+    answer ``logged_in: false`` — that is the verdict the caller's login
+    verification needs. Network/API faults still exit 4: a transient
+    outage must not read as "your login is invalid".
+    """
+    from qqmusic_api import Client
+    from qqmusic_api.modules.login import LoginApi
+    from qqmusic_api.modules.user import UserApi
+
+    credential = _credential()
+    if credential is None:
+        return {"logged_in": False, "nickname": "", "vip": False}
+    async with Client(credential) as client:
+        # check_expired is the ONE server-side verdict on the pair:
+        # get_vip_info answers a defaulted (all-zero) model for a bogus
+        # credential instead of raising, so it cannot carry the verdict.
+        if await LoginApi(client).check_expired():
+            return {"logged_in": False, "nickname": "", "vip": False}
+        return map_vip_info(await UserApi(client).get_vip_info())
 
 
 async def _run_lyric(mid: str) -> dict[str, Any]:
@@ -107,6 +155,8 @@ def _dispatch(args: argparse.Namespace) -> int:
             return _emit(asyncio.run(_run_search(args.keyword, args.limit)))
         if args.command == "url":
             return _emit(asyncio.run(_run_url(args.id)))
+        if args.command == "whoami":
+            return _emit(asyncio.run(_run_whoami()))
         return _emit(asyncio.run(_run_lyric(args.id)))
     except ValueError as exc:
         return _fail("upstream_rejected", str(exc), EXIT_UPSTREAM_REFUSED)
@@ -133,7 +183,9 @@ def _parser() -> argparse.ArgumentParser:
     lyric = subs.add_parser("lyric", help="fetch the LRC document for a track mid")
     lyric.add_argument("--id", required=True, help="track mid (from search)")
 
-    for sub in (search, url, lyric):
+    whoami = subs.add_parser("whoami", help="who the stored credential authenticates as")
+
+    for sub in (search, url, lyric, whoami):
         sub.add_argument("--format", default="json", help="output format (json only)")
     return parser
 

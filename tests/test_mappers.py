@@ -15,9 +15,11 @@ import pytest
 from qq_cli._mappers import (
     SCHEMA_VERSION,
     error_envelope,
+    extract_stream_url,
     map_lyric,
     map_search,
     map_url,
+    map_vip_info,
     success_envelope,
 )
 
@@ -87,31 +89,53 @@ def test_map_search_empty_is_empty():
     assert map_search([]) == []
 
 
-def test_map_url_returns_the_playable_url():
+def test_extract_stream_url_returns_the_playable_url():
     resp = _UrlResponse([_UrlItem("mid1", "https://cdn.example/a.mp3?vkey=x")])
 
-    resolved = map_url("mid1", resp)
+    assert extract_stream_url(resp) == "https://cdn.example/a.mp3?vkey=x"
+
+
+def test_extract_stream_url_prefixes_relative_purls():
+    resp = _UrlResponse([_UrlItem("mid1", "M500001.mp3?vkey=x")])
+
+    assert extract_stream_url(resp) == (
+        "https://ws.stream.qqmusic.qq.com/M500001.mp3?vkey=x"
+    )
+
+
+def test_extract_stream_url_empty_purl_is_none():
+    # The quality ladder probes several file types; an empty purl means
+    # "this rendition is not playable for this session", which is a
+    # probe miss, not an error — the caller refuses only after the
+    # LAST rung comes back empty.
+    assert extract_stream_url(_UrlResponse([_UrlItem("mid1", "", result=104003)])) is None
+    assert extract_stream_url(_UrlResponse([])) is None
+
+
+def test_map_url_carries_the_winning_quality_label():
+    resolved = map_url("mid1", "https://cdn.example/a.flac?vkey=x", "flac")
 
     assert resolved == {
         "id": "mid1",
-        "url": "https://cdn.example/a.mp3?vkey=x",
-        "quality": "128k",
+        "url": "https://cdn.example/a.flac?vkey=x",
+        "quality": "flac",
     }
 
 
-def test_map_url_empty_purl_means_login_required():
-    # The anonymous probe answered result=104003 with an empty purl.
-    # Publishing "" would hand the player nothing; this is a refusal.
-    resp = _UrlResponse([_UrlItem("mid1", "", result=104003)])
-
-    with pytest.raises(ValueError) as exc:
-        map_url("mid1", resp)
-    assert "credential" in str(exc.value).lower()
+class _VipInfo:
+    def __init__(self, svip=0, nickname=""):
+        self.svip = svip
+        self.userinfo = type("U", (), {"nick": nickname})() if nickname else None
 
 
-def test_map_url_no_entry_raises():
-    with pytest.raises(ValueError):
-        map_url("mid1", _UrlResponse([]))
+def test_map_vip_info_publishes_the_session_identity():
+    info = map_vip_info(_VipInfo(svip=1, nickname="Jim"))
+
+    assert info == {"logged_in": True, "nickname": "Jim", "vip": True}
+
+
+def test_map_vip_info_without_vip_or_nick():
+    assert map_vip_info(_VipInfo()) == {"logged_in": True, "nickname": "", "vip": False}
 
 
 def test_map_lyric_extracts_the_lrc():

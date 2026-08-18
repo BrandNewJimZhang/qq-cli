@@ -15,11 +15,6 @@ from typing import Any
 #: netease-cli's SchemaVersion — one schema, two resolvers.
 SCHEMA_VERSION = 1
 
-#: The bitrate label for the file type this CLI requests (MP3_128).
-#: Widening to lossless needs a credential, so the label is fixed until
-#: a caller asks for the quality axis.
-_QUALITY_LABEL = "128k"
-
 #: QQ serves album art off a stable CDN path keyed by album mid; the
 #: 300x300 rendition matches the panel's hero size. Same field name as
 #: netease-cli's cover — one schema, two resolvers.
@@ -62,26 +57,45 @@ def map_search(songs: list[Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def map_url(mid: str, response: Any) -> dict[str, Any]:
-    """Publish one playable stream, or refuse plainly.
+def extract_stream_url(response: Any) -> str | None:
+    """The playable URL in a song-url response, or None.
 
-    QQ answers 200 with an empty ``purl`` when the request carries no
-    credential (observed ``result=104003``). Publishing an empty url
-    would hand the player nothing and read as our bug, so it raises.
+    QQ answers 200 with an empty ``purl`` when the session may not play
+    this rendition (no credential, or the tier is above the account's
+    plan — observed ``result=104003``). The quality ladder in __main__
+    probes several file types, so an empty purl is a probe miss here,
+    not an error: the caller refuses only after the LAST rung is empty.
     """
     entries = getattr(response, "data", None) or []
     if not entries:
-        raise ValueError(f"url response carries no entry for {mid}")
-    entry = entries[0]
-    purl = getattr(entry, "purl", "") or ""
+        return None
+    purl = getattr(entries[0], "purl", "") or ""
     if not purl:
-        raise ValueError(
-            f"QQ Music returned no playable url for {mid} "
-            f"(result={getattr(entry, 'result', '?')}); most tracks need a "
-            "credential — set QQ_MUSIC_MUSICID and QQ_MUSIC_MUSICKEY"
-        )
-    url = purl if purl.startswith("http") else f"https://ws.stream.qqmusic.qq.com/{purl}"
-    return {"id": mid, "url": url, "quality": _QUALITY_LABEL}
+        return None
+    return purl if purl.startswith("http") else f"https://ws.stream.qqmusic.qq.com/{purl}"
+
+
+def map_url(mid: str, url: str, quality_label: str) -> dict[str, Any]:
+    """Publish one playable stream with the quality rung that answered."""
+    return {"id": mid, "url": url, "quality": quality_label}
+
+
+def map_vip_info(response: Any) -> dict[str, Any]:
+    """Publish the session identity behind a successful vip-info call.
+
+    Reaching this mapper at all means the credential authenticated
+    (the call requires login), so ``logged_in`` is True by construction;
+    the anonymous/expired paths short-circuit in __main__. ``svip`` is
+    QQ's premium-membership flag; the nickname rides the userinfo
+    summary when the response carries one.
+    """
+    userinfo = getattr(response, "userinfo", None)
+    nickname = (getattr(userinfo, "nick", "") or "") if userinfo else ""
+    return {
+        "logged_in": True,
+        "nickname": nickname,
+        "vip": bool(getattr(response, "svip", 0)),
+    }
 
 
 def map_lyric(response: Any) -> str:
