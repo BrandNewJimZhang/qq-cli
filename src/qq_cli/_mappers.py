@@ -9,6 +9,7 @@ agree live here and are pinned by tests.
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 #: Envelope version the AutoSkill runner unwraps. Kept in lockstep with
@@ -101,3 +102,79 @@ def map_vip_info(response: Any) -> dict[str, Any]:
 def map_lyric(response: Any) -> str:
     """Publish the LRC document, or ``""`` when the track has none."""
     return getattr(response, "lyric", "") or ""
+
+
+def credential_is_refreshable(credential: Any) -> bool:
+    """Whether *credential* carries the tokens a renewal request needs.
+
+    Upstream's renewal keys on ``refresh_token`` / ``refresh_key``,
+    which only a QR login produces. A hand-typed musicid/musickey pair
+    carries neither: it authenticates today and can never be renewed.
+    Saying so here is what turns that into a named refusal instead of a
+    request upstream rejects with empty parameters.
+    """
+    return bool(
+        (getattr(credential, "refresh_token", "") or "")
+        or (getattr(credential, "refresh_key", "") or "")
+    )
+
+
+def map_credential(credential: Any) -> dict[str, Any]:
+    """Publish a credential as the JSON blob the caller stores back.
+
+    The WHOLE model, not the musicid/musickey pair the url verb needs:
+    a caller that kept only the pair could authenticate today and would
+    lose the renewal tokens with it, which is exactly the trap this
+    resolver's refresh verb exists to avoid.
+    """
+    return credential.model_dump(mode="json")
+
+
+def map_qr(qr: Any, login_type: str) -> dict[str, Any]:
+    """Publish a login QR: the image to render, the token to poll with.
+
+    ``identifier`` is the whole of the poll state — upstream's status
+    check keys on it alone — so the caller can render this code, exit,
+    and poll from a separate process. That is why this verb pair works
+    at all across a CLI boundary.
+    """
+    data = getattr(qr, "data", b"") or b""
+    return {
+        "identifier": qr.identifier,
+        "login_type": login_type,
+        "mimetype": getattr(qr, "mimetype", "") or "",
+        "image_base64": base64.b64encode(data).decode("ascii") if data else "",
+    }
+
+
+#: upstream QR event -> the state the caller branches on. Keyed by enum
+#: NAME so this module stays free of the qqmusic_api import. Two states
+#: mean "keep polling" (pending, scanned) and two mean "start over"
+#: (expired, refused); netease-cli publishes the same five.
+_QR_STATES = {
+    "SCAN": "pending",
+    "CONF": "scanned",
+    "DONE": "done",
+    "TIMEOUT": "expired",
+    "REFUSE": "refused",
+}
+
+
+def map_qr_status(result: Any) -> dict[str, Any]:
+    """Publish one poll result: the state, plus the credential on DONE.
+
+    An event this mapper does not know raises rather than defaulting to
+    "pending": a caller told to keep polling a code upstream has stopped
+    honouring would spin until its own timeout with nothing to show.
+    """
+    name = getattr(getattr(result, "event", None), "name", "")
+    state = _QR_STATES.get(name)
+    if state is None:
+        raise ValueError(
+            f"unknown QR login event {name!r}; known: {', '.join(sorted(_QR_STATES))}"
+        )
+    credential = getattr(result, "credential", None)
+    return {
+        "state": state,
+        "credential": map_credential(credential) if credential is not None else None,
+    }

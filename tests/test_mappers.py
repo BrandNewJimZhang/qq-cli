@@ -14,9 +14,13 @@ import pytest
 
 from qq_cli._mappers import (
     SCHEMA_VERSION,
+    credential_is_refreshable,
     error_envelope,
     extract_stream_url,
+    map_credential,
     map_lyric,
+    map_qr,
+    map_qr_status,
     map_search,
     map_url,
     map_vip_info,
@@ -161,3 +165,117 @@ def test_success_envelope_carries_schema_version():
 def test_error_envelope_shape():
     env = error_envelope("upstream_rejected", "needs credential")
     assert env == {"error_class": "upstream_rejected", "message": "needs credential"}
+
+
+class _Credential:
+    """Stand-in for the library's pydantic credential model."""
+
+    def __init__(self, refresh_token="", refresh_key="", **rest):
+        self.refresh_token = refresh_token
+        self.refresh_key = refresh_key
+        self._rest = rest
+
+    def model_dump(self, mode="python"):
+        return {
+            "refresh_token": self.refresh_token,
+            "refresh_key": self.refresh_key,
+            **self._rest,
+        }
+
+
+def test_credential_from_a_qr_login_is_refreshable():
+    # A QR login hands back the renewal tokens; that is the whole reason
+    # the store keeps the full model instead of the musicid/musickey pair.
+    assert credential_is_refreshable(_Credential(refresh_token="rt", refresh_key="rk"))
+    assert credential_is_refreshable(_Credential(refresh_key="rk"))
+
+
+def test_hand_typed_credential_is_not_refreshable():
+    # musicid + musickey authenticate today and can never be renewed:
+    # the renewal request keys on tokens a hand-typed pair never carries.
+    # Answering False here is what turns that into a named refusal
+    # instead of a request upstream rejects with empty parameters.
+    assert not credential_is_refreshable(_Credential())
+
+
+def test_map_credential_publishes_the_whole_model():
+    # Not just the pair: a caller that stored only musicid/musickey
+    # would authenticate today and lose the ability to renew.
+    published = map_credential(_Credential(refresh_token="rt", musicid=42, musickey="W_X"))
+
+    assert published == {
+        "refresh_token": "rt",
+        "refresh_key": "",
+        "musicid": 42,
+        "musickey": "W_X",
+    }
+
+
+class _QR:
+    def __init__(self, data=b"\x89PNG\r\n", mimetype="image/png", identifier="qrsig-1"):
+        self.data = data
+        self.mimetype = mimetype
+        self.identifier = identifier
+
+
+def test_map_qr_publishes_a_renderable_image_and_the_poll_token():
+    published = map_qr(_QR(), "qq")
+
+    assert published == {
+        "identifier": "qrsig-1",
+        "login_type": "qq",
+        "mimetype": "image/png",
+        "image_base64": "iVBORw0K",
+    }
+
+
+def test_map_qr_without_image_data_publishes_an_empty_string():
+    # An identifier with no image is still pollable; the panel decides
+    # whether it has anything to render.
+    assert map_qr(_QR(data=b""), "qq")["image_base64"] == ""
+
+
+class _Event:
+    def __init__(self, name):
+        self.name = name
+
+
+class _QRResult:
+    def __init__(self, event_name, credential=None):
+        self.event = _Event(event_name)
+        self.credential = credential
+
+
+@pytest.mark.parametrize(
+    ("event_name", "state"),
+    [
+        ("SCAN", "pending"),
+        ("CONF", "scanned"),
+        ("TIMEOUT", "expired"),
+        ("REFUSE", "refused"),
+    ],
+)
+def test_map_qr_status_names_every_non_terminal_event(event_name, state):
+    # Every upstream event maps to a state the caller can branch on:
+    # "keep polling" (pending/scanned) vs "start over" (expired/refused).
+    # An unmapped event must never read as one of these.
+    assert map_qr_status(_QRResult(event_name)) == {"state": state, "credential": None}
+
+
+def test_map_qr_status_publishes_the_credential_on_done():
+    result = _QRResult("DONE", credential=_Credential(refresh_token="rt", musicid=7))
+
+    published = map_qr_status(result)
+
+    assert published["state"] == "done"
+    assert published["credential"]["musicid"] == 7
+    # The renewal token rides along — losing it here is exactly the trap
+    # the refresh verb cannot recover from.
+    assert published["credential"]["refresh_token"] == "rt"
+
+
+def test_map_qr_status_rejects_an_unknown_event():
+    # A new upstream event must stop the flow, not silently read as
+    # "keep polling" — that would spin forever on a dead code.
+    with pytest.raises(ValueError, match="unknown"):
+        map_qr_status(_QRResult("SOMETHING_NEW"))
