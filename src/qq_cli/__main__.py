@@ -22,8 +22,9 @@ which one you have decides whether the key can ever be renewed:
     browser session. Authenticates, but carries no renewal tokens, so
     ``refresh`` refuses it by name rather than firing a doomed request.
 
-A signed-in session walks the quality ladder (flac -> 320k -> 128k) and
-``whoami`` reports who the credential authenticates as.
+``--quality`` names a TIER (lossless / high / standard) shared with
+netease-cli, and the ladder falls DOWN from the ask; ``whoami`` reports
+who the credential authenticates as.
 """
 
 from __future__ import annotations
@@ -36,9 +37,11 @@ import sys
 from typing import Any
 
 from qq_cli._mappers import (
+    QUALITY_TIERS,
     credential_is_refreshable,
     error_envelope,
     extract_stream_url,
+    ladder_from,
     map_credential,
     map_lyric,
     map_playlists,
@@ -127,34 +130,57 @@ async def _run_search(keyword: str, limit: int) -> list[dict[str, Any]]:
         return map_search(response.song)
 
 
-async def _run_url(mid: str) -> dict[str, Any]:
-    """Resolve a stream, walking the quality ladder top-down.
+async def _run_url(mid: str, quality: str | None) -> dict[str, Any]:
+    """Resolve a stream, walking DOWN from the requested tier.
 
-    A signed-in session may be entitled to lossless; anonymous sessions
-    only ever get the 128k probe (higher rungs always answer empty
-    without a credential, so probing them would just burn requests).
-    An empty purl on every rung is a refusal, reported plainly.
+    Starting at the request is the point: a caller that picked the cheap
+    tier gets the cheap tier, and only the fallback direction is
+    automatic. An anonymous session skips the paid rungs — they always
+    answer empty without a credential, so probing them would just burn
+    requests — and an empty purl on every rung is a refusal, reported
+    plainly.
     """
     from qqmusic_api import Client
     from qqmusic_api.modules.song import SongApi, SongFileInfo, SongFileType
 
+    #: tier -> the file type that carries it.
+    file_types = {
+        "lossless": SongFileType.FLAC,
+        "high": SongFileType.MP3_320,
+        "standard": SongFileType.MP3_128,
+    }
+
+    ladder = ladder_from(quality)
+    if not ladder:
+        raise CredentialFault(
+            "bad_input",
+            f"unknown --quality {quality!r}; want one of "
+            f"{' / '.join(QUALITY_TIERS)}",
+            EXIT_BAD_INPUT,
+        )
     credential = _credential()
-    ladder = (
-        [(SongFileType.FLAC, "flac"), (SongFileType.MP3_320, "320k"), (SongFileType.MP3_128, "128k")]
-        if credential
-        else [(SongFileType.MP3_128, "128k")]
-    )
+    if credential is None:
+        ladder = tuple(tier for tier in ladder if tier == "standard")
+        if not ladder:
+            raise CredentialFault(
+                "credential_missing",
+                f"{quality} needs a signed-in account; sign in with "
+                "'login start', or ask for standard",
+                EXIT_BAD_INPUT,
+            )
     async with Client(credential) as client:
         api = SongApi(client)
-        for file_type, label in ladder:
-            response = await api.get_song_urls([SongFileInfo(mid=mid)], file_type)
+        for tier in ladder:
+            response = await api.get_song_urls(
+                [SongFileInfo(mid=mid)], file_types[tier]
+            )
             url = extract_stream_url(response)
             if url:
-                return map_url(mid, url, label)
+                return map_url(mid, url, tier)
     raise ValueError(
-        f"QQ Music returned no playable url for {mid}; most tracks need a "
-        "credential — set QQ_MUSIC_MUSICID and QQ_MUSIC_MUSICKEY (a track "
-        "above the account's plan is also refused)"
+        f"QQ Music returned no playable url for {mid} at {ladder[0]} or "
+        "below; most tracks need a credential — sign in with 'login "
+        "start' (a track above the account's plan is also refused)"
     )
 
 
@@ -360,7 +386,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         if args.command == "search":
             return _emit(asyncio.run(_run_search(args.keyword, args.limit)))
         if args.command == "url":
-            return _emit(asyncio.run(_run_url(args.id)))
+            return _emit(asyncio.run(_run_url(args.id, args.quality)))
         if args.command == "whoami":
             return _emit(asyncio.run(_run_whoami()))
         if args.command == "playlists":
@@ -398,7 +424,9 @@ def _parser() -> argparse.ArgumentParser:
 
     url = subs.add_parser("url", help="resolve a playable url for a track mid")
     url.add_argument("--id", required=True, help="track mid (from search)")
-    url.add_argument("--quality", default=None, help="accepted and ignored (MP3_128 only)")
+    url.add_argument(
+        "--quality", default=None, help="tier: lossless / high / standard"
+    )
 
     lyric = subs.add_parser("lyric", help="fetch the LRC document for a track mid")
     lyric.add_argument("--id", required=True, help="track mid (from search)")

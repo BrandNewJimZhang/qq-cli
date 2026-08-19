@@ -14,7 +14,7 @@ from typing import Any
 
 #: Envelope version the AutoSkill runner unwraps. Kept in lockstep with
 #: netease-cli's SchemaVersion — one schema, two resolvers.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 #: QQ serves album art off a stable CDN path keyed by album mid; the
 #: 300x300 rendition matches the panel's hero size. Same field name as
@@ -76,9 +76,48 @@ def extract_stream_url(response: Any) -> str | None:
     return purl if purl.startswith("http") else f"https://ws.stream.qqmusic.qq.com/{purl}"
 
 
-def map_url(mid: str, url: str, quality_label: str) -> dict[str, Any]:
-    """Publish one playable stream with the quality rung that answered."""
-    return {"id": mid, "url": url, "quality": quality_label}
+#: The shared quality vocabulary, best first — the SAME three words
+#: netease-cli accepts and answers in. A caller asks for a TIER, never a
+#: bitrate: this upstream exposes file types with no bitrate knob at
+#: all, so bps could never have been the shared word. Ordered so the
+#: tuple doubles as the fallback ladder.
+QUALITY_TIERS = ("lossless", "high", "standard")
+
+#: tier -> the kbps a caller is getting on that rung. QQ answers a file
+#: TYPE rather than a measured rate, so these are nominal — the field
+#: means "kbps you are getting", and for this source that is the rung's
+#: nominal value. netease-cli publishes what upstream measured.
+TIER_BITRATES = {"lossless": 999, "high": 320, "standard": 128}
+
+
+def ladder_from(requested: str | None) -> tuple[str, ...]:
+    """The tiers to probe for a request, best first, starting AT the ask.
+
+    Starting at the request rather than the top is the point: a caller
+    that picked the cheap tier gets the cheap tier, and only the
+    fallback direction (down) is automatic. An unknown tier yields no
+    ladder — the verb reports it rather than substituting a default.
+    """
+    if not requested:
+        return QUALITY_TIERS
+    if requested not in QUALITY_TIERS:
+        return ()
+    return QUALITY_TIERS[QUALITY_TIERS.index(requested) :]
+
+
+def map_url(mid: str, url: str, tier: str) -> dict[str, Any]:
+    """Publish one playable stream: the tier that answered and its kbps.
+
+    Both halves ride the wire for the same reason netease-cli sends
+    both — the tier is the word the panel offers, the bitrate is what
+    the listener is actually getting.
+    """
+    return {
+        "id": mid,
+        "url": url,
+        "quality": tier,
+        "bitrate": TIER_BITRATES[tier],
+    }
 
 
 def map_vip_info(response: Any) -> dict[str, Any]:

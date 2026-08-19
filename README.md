@@ -18,7 +18,7 @@ pipx install .          # or: pip install .
 ```bash
 qq-cli search --keyword "周杰伦 稻香" --limit 20
 qq-cli whoami
-qq-cli url    --id 003aAYrm3GE0Ac
+qq-cli url    --id 003aAYrm3GE0Ac [--quality lossless|high|standard]
 qq-cli lyric  --id 003aAYrm3GE0Ac
 
 qq-cli playlists
@@ -37,13 +37,13 @@ publishes).
 ## Contract
 
 ```json
-{"schema_version": 1, "data": ...}
+{"schema_version": 2, "data": ...}
 ```
 
 | Verb           | `data` shape |
 |----------------|--------------|
 | `search`       | `[{id, title, artist, album, cover, duration}]` — duration in **milliseconds** (QQ reports seconds; normalised so it matches netease-cli), `cover` an album-art URL or `""`, multiple singers joined with ` / ` |
-| `url`          | `{id, url, quality}` — quality is the ladder rung that answered: `flac` / `320k` / `128k` |
+| `url`          | `{id, url, quality, bitrate}` — `quality` is the TIER that answered (`lossless` / `high` / `standard`), `bitrate` the kbps you are getting |
 | `lyric`        | `{id, lrc}` — LRC document, `""` when the track has none |
 | `whoami`       | `{logged_in, nickname, vip}` — server-verified session verdict (anonymous and rejected credentials both answer `logged_in: false`) |
 | `playlists`    | `[{id, title, cover, count, description}]` — the account's own shelf |
@@ -108,11 +108,16 @@ poll on its own schedule. Poll until `done` (store the credential),
 
 ## Scope and limits
 
-- **Quality ladder.** A signed-in session probes `flac` -> `320k` ->
-  `128k` and answers the first rung the account may play; anonymous
-  sessions only probe `128k` (higher rungs always answer empty without
-  a credential). `--quality` is accepted and ignored so the two
-  resolvers share one argv shape.
+- **Quality tiers.** `--quality` names a TIER, never a bitrate: this
+  upstream exposes file types with no bitrate knob, so bps could never
+  be the shared word. The request starts the ladder and falls DOWN only
+  — asking for `standard` never silently upgrades you. Anonymous
+  sessions are capped at `standard` (the paid rungs always answer empty
+  without a credential, so probing them would just burn requests).
+- **Nominal bitrate.** `bitrate` is this tier's nominal kbps, because
+  QQ answers a file type rather than a measured rate. netease-cli
+  publishes what upstream measured — the field means "kbps you are
+  getting" on both, but only one of them measures it.
 - **Account-scoped verbs.** `playlists` and `daily` describe one
   account, so an anonymous session is refused by name rather than
   answering an empty shelf — "you have nothing saved" and "we do not

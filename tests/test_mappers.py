@@ -13,10 +13,13 @@ from __future__ import annotations
 import pytest
 
 from qq_cli._mappers import (
+    QUALITY_TIERS,
     SCHEMA_VERSION,
+    TIER_BITRATES,
     credential_is_refreshable,
     error_envelope,
     extract_stream_url,
+    ladder_from,
     map_credential,
     map_lyric,
     map_playlists,
@@ -115,16 +118,6 @@ def test_extract_stream_url_empty_purl_is_none():
     # LAST rung comes back empty.
     assert extract_stream_url(_UrlResponse([_UrlItem("mid1", "", result=104003)])) is None
     assert extract_stream_url(_UrlResponse([])) is None
-
-
-def test_map_url_carries_the_winning_quality_label():
-    resolved = map_url("mid1", "https://cdn.example/a.flac?vkey=x", "flac")
-
-    assert resolved == {
-        "id": "mid1",
-        "url": "https://cdn.example/a.flac?vkey=x",
-        "quality": "flac",
-    }
 
 
 class _VipInfo:
@@ -322,3 +315,44 @@ def test_map_playlists_stringifies_the_id():
 
 def test_map_playlists_empty_is_empty():
     assert map_playlists([]) == []
+
+
+def test_quality_tiers_are_the_shared_vocabulary():
+    # The SAME three words netease-cli accepts and answers in. A caller
+    # asks for a tier, never a bitrate: this upstream exposes file types
+    # with no bitrate knob, so bps could never have been the shared word.
+    assert QUALITY_TIERS == ("lossless", "high", "standard")
+
+
+def test_ladder_from_starts_at_the_requested_tier():
+    # A caller that picked the cheap tier gets the cheap tier; only the
+    # fallback direction (down) is automatic.
+    assert ladder_from("standard") == ("standard",)
+    assert ladder_from("high") == ("high", "standard")
+    assert ladder_from(None) == QUALITY_TIERS
+
+
+def test_ladder_from_unknown_tier_is_empty():
+    # Caller error, reported by the verb — never coerced to a default
+    # the caller did not ask for.
+    assert ladder_from("ultra") == ()
+
+
+def test_map_url_publishes_the_tier_and_its_bitrate():
+    resolved = map_url("mid1", "https://cdn.example/a.flac?vkey=x", "lossless")
+
+    assert resolved == {
+        "id": "mid1",
+        "url": "https://cdn.example/a.flac?vkey=x",
+        "quality": "lossless",
+        "bitrate": TIER_BITRATES["lossless"],
+    }
+
+
+def test_map_url_bitrate_is_nominal_for_this_source():
+    # QQ answers a file TYPE, not a measured bitrate, so the published
+    # number is this tier's nominal rate. Marked here because it is a
+    # real difference from netease-cli, which reports what upstream
+    # measured — the field means "kbps you are getting", and for this
+    # source that is the rung's nominal value.
+    assert map_url("m", "u", "standard")["bitrate"] == 128
