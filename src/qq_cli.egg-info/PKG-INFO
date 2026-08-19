@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: qq-cli
+Version: 0.1.0
+Summary: Agent-native QQ Music resolver: search / url / lyric as JSON
+Requires-Python: >=3.10
+Requires-Dist: qqmusic-api-python>=0.7.2

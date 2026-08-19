@@ -13,6 +13,22 @@ Wraps [qqmusic-api-python](https://pypi.org/project/qqmusic-api-python/).
 pipx install .          # or: pip install .
 ```
 
+## Release artifact
+
+`scripts/build-artifact.sh` bundles a standalone executable into
+`dist/` and prints the platform token and sha256 a marketplace entry
+needs:
+
+```bash
+scripts/build-artifact.sh
+```
+
+PyInstaller onefile rather than a zipapp, because the target host is
+not assumed to have a Python at all — that is the point of the store
+delivering a binary. It bundles the running interpreter, so
+cross-compilation is impossible: each platform's artifact is built on
+that platform.
+
 ## Verbs
 
 ```bash

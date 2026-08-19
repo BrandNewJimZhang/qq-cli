@@ -1,4 +1,5 @@
+dist/
+build/
+*.spec
 .venv/
 __pycache__/
-*.egg-info/
-dist/
