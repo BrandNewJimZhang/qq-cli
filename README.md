@@ -21,6 +21,10 @@ qq-cli whoami
 qq-cli url    --id 003aAYrm3GE0Ac
 qq-cli lyric  --id 003aAYrm3GE0Ac
 
+qq-cli playlists
+qq-cli playlist --id 7364061161 [--limit 50]
+qq-cli daily
+
 qq-cli login start --type qq
 qq-cli login poll  --identifier <token from start>
 qq-cli refresh
@@ -42,6 +46,9 @@ publishes).
 | `url`          | `{id, url, quality}` — quality is the ladder rung that answered: `flac` / `320k` / `128k` |
 | `lyric`        | `{id, lrc}` — LRC document, `""` when the track has none |
 | `whoami`       | `{logged_in, nickname, vip}` — server-verified session verdict (anonymous and rejected credentials both answer `logged_in: false`) |
+| `playlists`    | `[{id, title, cover, count, description}]` — the account's own shelf |
+| `playlist`     | `[{id, title, artist, album, cover, duration}]` — the SAME row `search` publishes, so a shelf is playable and queueable without a second shape |
+| `daily`        | same track rows — today's recommendations |
 | `login start`  | `{identifier, login_type, mimetype, image_base64}` — the QR to render and the token to poll it by |
 | `login poll`   | `{state, credential}` — `state` is one of `pending` / `scanned` / `done` / `expired` / `refused`; `credential` is the storable blob, non-null only on `done` |
 | `refresh`      | the renewed credential blob, same shape `login poll` publishes on `done` |
@@ -62,7 +69,7 @@ Failures print one line on stderr and exit non-zero:
 |-----------------------------|------|---------|
 | `bad_input`                 | 3    | malformed flag or unknown login type |
 | `bad_credential`            | 3    | `QQ_MUSIC_CREDENTIAL` is not a valid credential document |
-| `credential_missing`        | 3    | `refresh` with nothing stored |
+| `credential_missing`        | 3    | `refresh` / `playlists` / `daily` with no signed-in session |
 | `credential_not_refreshable`| 3    | a hand-typed pair carries no renewal tokens |
 | `credential_expired`        | 4    | upstream refused the renewal — sign in again |
 | `upstream_rejected`         | 4    | no playable url, transport or API failure |
@@ -106,6 +113,11 @@ poll on its own schedule. Poll until `done` (store the credential),
   sessions only probe `128k` (higher rungs always answer empty without
   a credential). `--quality` is accepted and ignored so the two
   resolvers share one argv shape.
+- **Account-scoped verbs.** `playlists` and `daily` describe one
+  account, so an anonymous session is refused by name rather than
+  answering an empty shelf — "you have nothing saved" and "we do not
+  know who you are" must not look the same. `playlist` takes a public
+  id and works signed out.
 - **No unlocking.** A track this account may not play answers exit 4.
   This resolver will never route around an entitlement it was refused.
 - **QR channels.** `--type` accepts `qq` / `wx` / `mobile`; only `qq` is

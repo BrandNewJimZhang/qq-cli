@@ -178,3 +178,24 @@ def map_qr_status(result: Any) -> dict[str, Any]:
         "state": state,
         "credential": map_credential(credential) if credential is not None else None,
     }
+
+
+def map_playlists(summaries: Any) -> list[dict[str, Any]]:
+    """Publish playlist rows.
+
+    A second row shape beside the track row, and the same rule applies:
+    netease-cli publishes these field names too, so the panel renders
+    either resolver's shelf without knowing which answered. ``id`` is a
+    string because it is an opaque token the caller hands straight back
+    — both sources happen to number theirs, and neither is arithmetic.
+    """
+    return [
+        {
+            "id": str(summary.id),
+            "title": summary.title,
+            "cover": getattr(summary, "picurl", "") or "",
+            "count": int(getattr(summary, "songnum", 0) or 0),
+            "description": getattr(summary, "desc", "") or "",
+        }
+        for summary in summaries
+    ]

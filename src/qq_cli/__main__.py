@@ -1,10 +1,11 @@
 """qq-cli — an agent-native resolver for QQ Music.
 
-Read-only resolution (search / url / lyric / whoami) plus the login
-lifecycle its credentials need (login start / login poll / refresh),
-each answering one JSON envelope on stdout. The command surface and the
-published schema match netease-cli field for field: the music panel
-fans out to both and merges the rows without knowing which answered.
+Read-only resolution (search / url / lyric / whoami / playlists /
+playlist / daily) plus the login lifecycle its credentials need
+(login start / login poll / refresh), each answering one JSON envelope
+on stdout. The command surface and the published schema match
+netease-cli field for field: the music panel fans out to both and
+merges the rows without knowing which answered.
 
 Contract:
   - stdout: {"schema_version":1,"data":<payload>}
@@ -40,6 +41,7 @@ from qq_cli._mappers import (
     extract_stream_url,
     map_credential,
     map_lyric,
+    map_playlists,
     map_qr,
     map_qr_status,
     map_search,
@@ -189,6 +191,70 @@ async def _run_lyric(mid: str) -> dict[str, Any]:
         return {"id": mid, "lrc": map_lyric(response)}
 
 
+async def _run_playlists() -> list[dict[str, Any]]:
+    """The signed-in account's own playlists.
+
+    Account-scoped by definition, so an anonymous session is a named
+    refusal rather than an empty shelf — "you have no playlists" and
+    "we do not know who you are" must not look the same.
+    """
+    from qqmusic_api import Client
+    from qqmusic_api.modules.user import UserApi
+
+    credential = _credential()
+    if credential is None:
+        raise CredentialFault(
+            "credential_missing",
+            "playlists are account-scoped; sign in with 'login start' first",
+            EXIT_BAD_INPUT,
+        )
+    async with Client(credential) as client:
+        response = await UserApi(client).get_created_songlist(
+            int(credential.musicid), credential=credential
+        )
+        return map_playlists(response.playlists)
+
+
+async def _run_playlist(playlist_id: str, limit: int) -> list[dict[str, Any]]:
+    """One playlist's tracks, in the row shape ``search`` publishes.
+
+    Deliberately the same rows: a shelf the panel can play from without
+    a second mapper, and a queue it can hand to ``url`` unchanged.
+    """
+    from qqmusic_api import Client
+    from qqmusic_api.modules.songlist import SonglistApi
+
+    if not playlist_id.isdigit():
+        raise CredentialFault(
+            "bad_input",
+            f"playlist id must be numeric, got {playlist_id!r}",
+            EXIT_BAD_INPUT,
+        )
+    async with Client(_credential()) as client:
+        response = await SonglistApi(client).get_detail(int(playlist_id), num=limit)
+        return map_search(response.songs)
+
+
+async def _run_daily() -> list[dict[str, Any]]:
+    """Today's recommended tracks for the signed-in account."""
+    from qqmusic_api import Client
+    from qqmusic_api.modules.recommend import RecommendApi
+
+    credential = _credential()
+    if credential is None:
+        raise CredentialFault(
+            "credential_missing",
+            "daily recommendations are account-scoped; sign in with "
+            "'login start' first",
+            EXIT_BAD_INPUT,
+        )
+    async with Client(credential) as client:
+        response = await RecommendApi(client).get_guess_recommend(
+            credential=credential
+        )
+        return map_search(response.songs)
+
+
 def _qr_login_type(name: str):
     from qqmusic_api.models.login import QRLoginType
 
@@ -297,6 +363,12 @@ def _dispatch(args: argparse.Namespace) -> int:
             return _emit(asyncio.run(_run_url(args.id)))
         if args.command == "whoami":
             return _emit(asyncio.run(_run_whoami()))
+        if args.command == "playlists":
+            return _emit(asyncio.run(_run_playlists()))
+        if args.command == "playlist":
+            return _emit(asyncio.run(_run_playlist(args.id, args.limit)))
+        if args.command == "daily":
+            return _emit(asyncio.run(_run_daily()))
         if args.command == "refresh":
             return _emit(asyncio.run(_run_refresh()))
         if args.command == "login":
@@ -333,6 +405,14 @@ def _parser() -> argparse.ArgumentParser:
 
     whoami = subs.add_parser("whoami", help="who the stored credential authenticates as")
 
+    playlists = subs.add_parser("playlists", help="the account's own playlists")
+
+    playlist = subs.add_parser("playlist", help="one playlist's tracks")
+    playlist.add_argument("--id", required=True, help="playlist id (from playlists)")
+    playlist.add_argument("--limit", type=int, default=50)
+
+    daily = subs.add_parser("daily", help="today's recommended tracks")
+
     refresh = subs.add_parser("refresh", help="renew the stored credential")
 
     login = subs.add_parser("login", help="obtain a credential by QR scan")
@@ -345,7 +425,18 @@ def _parser() -> argparse.ArgumentParser:
     for sub in (login_start, login_poll):
         sub.add_argument("--type", default="qq", help="qr channel: qq / wx / mobile")
 
-    for sub in (search, url, lyric, whoami, refresh, login_start, login_poll):
+    for sub in (
+        search,
+        url,
+        lyric,
+        whoami,
+        playlists,
+        playlist,
+        daily,
+        refresh,
+        login_start,
+        login_poll,
+    ):
         sub.add_argument("--format", default="json", help="output format (json only)")
     return parser
 
@@ -364,7 +455,7 @@ def main() -> int:
             f"unsupported --format {args.format!r}; this CLI emits json only",
             EXIT_BAD_INPUT,
         )
-    if args.command == "search" and args.limit <= 0:
+    if args.command in ("search", "playlist") and args.limit <= 0:
         return _fail("bad_input", "--limit must be positive", EXIT_BAD_INPUT)
     return _dispatch(args)
 

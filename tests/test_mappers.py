@@ -19,6 +19,7 @@ from qq_cli._mappers import (
     extract_stream_url,
     map_credential,
     map_lyric,
+    map_playlists,
     map_qr,
     map_qr_status,
     map_search,
@@ -279,3 +280,45 @@ def test_map_qr_status_rejects_an_unknown_event():
     # "keep polling" — that would spin forever on a dead code.
     with pytest.raises(ValueError, match="unknown"):
         map_qr_status(_QRResult("SOMETHING_NEW"))
+
+
+class _PlaylistSummary:
+    def __init__(self, id, title, picurl="", songnum=0, desc=""):
+        self.id = id
+        self.title = title
+        self.picurl = picurl
+        self.songnum = songnum
+        self.desc = desc
+
+
+def test_map_playlists_publishes_the_shared_row_shape():
+    # The panel renders one playlist row for either resolver, so the
+    # field names are the contract — same posture as the track row.
+    rows = map_playlists(
+        [
+            _PlaylistSummary(
+                7001, "私人雷达", "https://y.gtimg.cn/p.jpg", 30, "每日更新"
+            )
+        ]
+    )
+
+    assert rows == [
+        {
+            "id": "7001",
+            "title": "私人雷达",
+            "cover": "https://y.gtimg.cn/p.jpg",
+            "count": 30,
+            "description": "每日更新",
+        }
+    ]
+
+
+def test_map_playlists_stringifies_the_id():
+    # Ids are per-source opaque tokens the caller hands straight back;
+    # netease's are numeric too but the panel must never do arithmetic
+    # on either, so both publish strings.
+    assert map_playlists([_PlaylistSummary(42, "t")])[0]["id"] == "42"
+
+
+def test_map_playlists_empty_is_empty():
+    assert map_playlists([]) == []
