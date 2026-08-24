@@ -1,5 +1,11 @@
 # qq-cli
 
+**English** | [简体中文](README.zh-CN.md)
+
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Schema](https://img.shields.io/badge/schema__version-2-blue)
+
 An agent-native resolver for QQ Music: read-only verbs that answer JSON,
 plus the login lifecycle their credentials need. The command surface and
 published schema match
