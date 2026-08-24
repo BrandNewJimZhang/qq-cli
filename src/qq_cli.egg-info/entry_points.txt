@@ -1,2 +1,0 @@
-[console_scripts]
-qq-cli = qq_cli.__main__:main

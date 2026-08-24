@@ -1,1 +1,0 @@
-qqmusic-api-python>=0.7.2
