@@ -16,6 +16,12 @@
 ## 安装
 
 ```bash
+pipx install git+https://github.com/BrandNewJimZhang/qq-cli
+```
+
+或从源码检出安装：
+
+```bash
 pipx install .          # or: pip install .
 ```
 

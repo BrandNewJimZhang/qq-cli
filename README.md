@@ -18,6 +18,12 @@ Wraps [qqmusic-api-python](https://pypi.org/project/qqmusic-api-python/).
 ## Install
 
 ```bash
+pipx install git+https://github.com/BrandNewJimZhang/qq-cli
+```
+
+Or from a checkout:
+
+```bash
 pipx install .          # or: pip install .
 ```
 
