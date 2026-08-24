@@ -2,7 +2,9 @@
 
 An agent-native resolver for QQ Music: read-only verbs that answer JSON,
 plus the login lifecycle their credentials need. The command surface and
-published schema match [`netease-cli`](../netease-cli) field for field,
+published schema match
+[`netease-cli`](https://github.com/BrandNewJimZhang/netease-cli) field
+for field,
 so one panel can fan out to both and merge the rows.
 
 Wraps [qqmusic-api-python](https://pypi.org/project/qqmusic-api-python/).
@@ -148,3 +150,19 @@ poll on its own schedule. Poll until `done` (store the credential),
   upstream can change or break at any time.
 - **Line-level lyrics only.** The `qrc` word-level field is not
   published.
+
+## Legal notice
+
+An unofficial project, not affiliated with or endorsed by QQ Music or
+Tencent. Personal, non-commercial use only. It authenticates as you and
+reads the same endpoints the official client serves your own account —
+within that account's entitlements, never around them (see *No
+unlocking* above). No audio is bundled, cached or redistributed; the CLI
+publishes URLs the service minted for your session. You are responsible
+for complying with the service's terms in your jurisdiction. Rights
+holders may open an issue with takedown concerns; the maintainer will
+comply promptly.
+
+## License
+
+[MIT](LICENSE)
