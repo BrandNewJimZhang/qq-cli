@@ -28,9 +28,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller qqmusic-api-python
-      - run: python scripts/build-artifact.sh
+      - run: bash scripts/build-artifact.sh
         env:
-          PYTHON: python
+          PYTHON: "$(command -v python)"
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.os }}
