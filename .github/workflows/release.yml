@@ -57,11 +57,15 @@ jobs:
           else
             echo "ref=${{ github.ref_name }}" >> "$GITHUB_ENV"
           fi
+      # --repo on both: this job never checks the repository out, and
+      # ``gh`` otherwise resolves the target from the local git remote
+      # ("failed to run git: fatal: not a git repository"), which is how
+      # the v0.2.0 run built all four artifacts and published none.
       - name: Create release
-        run: gh release create "$ref" --verify-tag --generate-notes || true
+        run: gh release create "$ref" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes || true
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Upload assets
-        run: gh release upload "$ref" dist/* --clobber
+        run: gh release upload "$ref" --repo "$GITHUB_REPOSITORY" dist/* --clobber
         env:
           GH_TOKEN: ${{ github.token }}
