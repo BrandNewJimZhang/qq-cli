@@ -27,16 +27,26 @@ pipx install .          # or: pip install .
 
 ## 发布产物
 
-`scripts/build-artifact.sh` 把独立可执行文件打包到 `dist/`，并打印
-marketplace 条目所需的平台标识与 sha256：
+`scripts/build-artifact.sh` 把独立应用打包成
+`dist/qq-cli-<os>-<arch>.tar.gz`，并打印 marketplace 条目所需的平台
+标识、sha256 与体积：
 
 ```bash
 scripts/build-artifact.sh
 ```
 
-选 PyInstaller onefile 而不是 zipapp，因为目标主机不假设装有任何
-Python —— 商店交付二进制的意义正在于此。它捆绑当前运行的解释器，
-所以无法交叉编译：每个平台的产物都在该平台上构建。
+归档的根目录是 `qq-cli/`，可执行文件是 `qq-cli/qq-cli` —— 这是
+marketplace 的归档交付按约定解包并解析的布局。
+
+选 ONEDIR 而不是 onefile，也不是 zipapp。zipapp 需要目标主机装有
+Python；onedir 捆绑当前运行的解释器，所以不需要 —— 商店交付二进制的
+意义正在于此。onefile 同样不需要 Python，但它每次启动都把整个运行时
+重新解压到一个全新的随机临时目录，而 macOS 对每个 Mach-O 镜像在某个
+路径下首次加载时都要做一次代码签名校验。路径每次都新，缓存永远命中
+不了：`qq-cli --help` 在 onefile 下要 8.5 秒，而在热的 onedir 包下是
+0.06 秒(首次 1.26 秒，那一次就是校验，只付一遍)。两种方式都无法交叉
+编译 —— PyInstaller 捆绑当前运行的解释器 —— 所以每个平台的产物都在
+该平台上构建。
 
 ## 动词
 

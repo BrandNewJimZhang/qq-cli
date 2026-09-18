@@ -15,8 +15,13 @@ jobs:
     strategy:
       matrix:
         include:
+          # macos-latest is arm64 now, so the Intel leg names its label
+          # explicitly. It used to say macos-13, which GitHub no longer
+          # serves: that job queued until the 24h timeout and, because
+          # ``release`` needs the whole matrix, every tag since v0.1.0
+          # produced no assets through CI at all.
           - os: macos-14
-          - os: macos-13
+          - os: macos-15-intel
           - os: ubuntu-latest
           - os: ubuntu-22.04-arm
     steps:

@@ -29,19 +29,30 @@ pipx install .          # or: pip install .
 
 ## Release artifact
 
-`scripts/build-artifact.sh` bundles a standalone executable into
-`dist/` and prints the platform token and sha256 a marketplace entry
-needs:
+`scripts/build-artifact.sh` bundles a standalone application into
+`dist/qq-cli-<os>-<arch>.tar.gz` and prints the platform token, sha256
+and size a marketplace entry needs:
 
 ```bash
 scripts/build-artifact.sh
 ```
 
-PyInstaller onefile rather than a zipapp, because the target host is
-not assumed to have a Python at all — that is the point of the store
-delivering a binary. It bundles the running interpreter, so
-cross-compilation is impossible: each platform's artifact is built on
-that platform.
+The archive's root is `qq-cli/` and its executable is `qq-cli/qq-cli` —
+the layout a marketplace's archive delivery extracts and resolves by
+convention.
+
+ONEDIR rather than onefile, and rather than a zipapp. A zipapp would
+need the target host to have a Python; onedir bundles the running
+interpreter, so it does not — which is the point of the store
+delivering a binary. Onefile would also need no Python, but it
+re-extracts the whole runtime into a fresh random temp directory on
+every launch, and macOS validates each Mach-O image the first time it
+is loaded from a given path. A fresh path per run means that cache
+never hits: `qq-cli --help` took 8.5 s as onefile against 0.06 s from a
+warm onedir bundle (1.26 s for the first run, which is that validation
+paid once). Cross-compilation is impossible either way — PyInstaller
+bundles the running interpreter — so each platform's artifact is built
+on that platform.
 
 ## Verbs
 
