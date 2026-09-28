@@ -78,7 +78,7 @@ qq-cli refresh
 |----------------|--------------|
 | `search`       | `[{id, title, artist, album, cover, duration}]` —— `duration` 为**毫秒**（QQ 上报的是秒；已归一化以对齐 netease-cli），`cover` 为专辑封面 URL 或 `""`，多位歌手以 ` / ` 连接 |
 | `url`          | `{id, url, quality, bitrate}` —— `quality` 是实际应答的档位（`lossless` / `high` / `standard`），`bitrate` 是你实际获得的 kbps |
-| `lyric`        | `{id, lrc}` —— LRC 文档，曲目无歌词时为 `""` |
+| `lyric`        | `{id, lrc, words}` —— LRC 文档（曲目无歌词时为 `""`）与逐字歌词：`[{start, duration, text, words: [{start, duration, text}]}]`，单位为距曲目开头的毫秒；上游无逐字时间时为 `[]` |
 | `whoami`       | `{logged_in, nickname, vip}` —— 服务端校验的会话裁决（匿名与被拒凭据都应答 `logged_in: false`） |
 | `playlists`    | `[{id, title, cover, count, description}]` —— 该账号自己的歌单书架 |
 | `playlist`     | `[{id, title, artist, album, cover, duration}]` —— 与 `search` 发布的同一行形状，书架无需第二种形状即可播放、入队 |
@@ -159,7 +159,7 @@ identifier 查询一次并应答一个状态。identifier 就是轮询状态的�
   验证。
 - **逆向实现。** QQ 音乐不发布面向个人使用的 API；上游随时可能变更
   或失效。
-- **仅行级歌词。** 不发布 `qrc` 字级字段。
+- **上游有逐字时间才有逐字歌词。** `words` 即 QQ 的 QRC，由库解密，并与 LRC 一并获取（请求 QRC 时上游会以它替换 LRC）。不发布翻译与罗马音。
 
 ## 法律声明
 

@@ -10,6 +10,8 @@ agree live here and are pinned by tests.
 from __future__ import annotations
 
 import base64
+import html
+import re
 from typing import Any
 
 #: Envelope version the AutoSkill runner unwraps. Kept in lockstep with
@@ -136,6 +138,73 @@ def map_vip_info(response: Any) -> dict[str, Any]:
         "nickname": nickname,
         "vip": bool(getattr(response, "svip", 0)),
     }
+
+
+#: The sheet inside the QRC's XML shell. Read with a pattern, not an XML
+#: parser: the attribute value carries raw newlines, which attribute-value
+#: normalisation turns into spaces — every line fused into one.
+_QRC_CONTENT_RE = re.compile(r'LyricContent="(.*?)"\s*/>', re.DOTALL)
+#: [line start ms, line duration ms] then the words.
+_QRC_LINE_RE = re.compile(r"^\[(\d+),(\d+)\](.*)$")
+#: (word start ms, word duration ms) — FOLLOWING the word it times.
+_QRC_WORD_RE = re.compile(r"\((\d+),(\d+)\)")
+#: A header line such as [ti:稻香] or [offset:0].
+_QRC_TAG_RE = re.compile(r"^\[[a-zA-Z#]+:[^\]]*\]$")
+
+
+def map_words(response: Any) -> list[dict[str, Any]]:
+    """Publish the word-timed sheet from a ``get_lyric(qrc=True)`` answer.
+
+    The same shape netease-cli publishes from NetEase's yrc: sung lines of
+    ``{start, duration, text, words: [{start, duration, text}]}`` in ms
+    from the start of the track, ``[]`` when the track has no word timing
+    (upstream then answers the plain LRC, which is not an XML document).
+
+    Header tags are skipped. A line that starts like a cue but does not
+    parse, or carries text after its last word cue, raises: that is an
+    upstream shape change, and a sheet silently missing words lights the
+    wrong ones.
+    """
+    document = getattr(response, "lyric", "") or ""
+    if not document.startswith("<?xml"):
+        return []
+    content = _QRC_CONTENT_RE.search(document)
+    if content is None:
+        raise ValueError("qrc document carries no LyricContent")
+    lines: list[dict[str, Any]] = []
+    for number, raw in enumerate(html.unescape(content.group(1)).split("\n"), 1):
+        raw = raw.rstrip("\r")
+        if not raw.strip() or _QRC_TAG_RE.match(raw):
+            continue
+        head = _QRC_LINE_RE.match(raw)
+        if head is None:
+            raise ValueError(f"qrc line {number} is malformed: {raw!r}")
+        rest = head.group(3)
+        words: list[dict[str, Any]] = []
+        cursor = 0
+        for cue in _QRC_WORD_RE.finditer(rest):
+            words.append(
+                {
+                    "start": int(cue.group(1)),
+                    "duration": int(cue.group(2)),
+                    "text": rest[cursor : cue.start()],
+                }
+            )
+            cursor = cue.end()
+        if cursor != len(rest):
+            raise ValueError(f"qrc line {number} has text after its last cue: {raw!r}")
+        text = "".join(word["text"] for word in words)
+        if not text.strip():
+            continue
+        lines.append(
+            {
+                "start": int(head.group(1)),
+                "duration": int(head.group(2)),
+                "text": text,
+                "words": words,
+            }
+        )
+    return lines
 
 
 def map_lyric(response: Any) -> str:

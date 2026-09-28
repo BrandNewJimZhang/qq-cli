@@ -23,6 +23,7 @@ from qq_cli._mappers import (
     map_credential,
     map_lyric,
     map_playlists,
+    map_words,
     map_qr,
     map_qr_status,
     map_search,
@@ -148,6 +149,55 @@ def test_map_lyric_missing_is_empty():
         lyric = ""
 
     assert map_lyric(_Lyric()) == ""
+
+
+# A get_lyric(qrc=True) capture (probed 2026-09-28, 003aAYrm3GE0Ac),
+# trimmed to the header tags and two sung lines. The library has already
+# decrypted it; the document is an XML shell whose LyricContent attribute
+# holds the sheet, NEWLINES INCLUDED — an XML parser would normalise them
+# to spaces and fuse the lines. Each word's cue FOLLOWS the word (the
+# reverse of NetEase's yrc), and a word may itself be a bracket.
+_QRC = (
+    '<?xml version="1.0" encoding="utf-8"?>\n<QrcInfos>\n'
+    '<QrcHeadInfo SaveTime="223" Version="100"/>\n<LyricInfo LyricCount="1">\n'
+    '<Lyric_1 LyricType="1" LyricContent="[ti:稻香]\n[ar:周杰伦]\n[offset:0]\n'
+    "[0,7730]稻(0,552)香(552,552) (1104,552)((4968,552)Jay(5520,552))(7176,552)\n"
+    "[7730,1200]对(7730,600)&amp;(8330,600)\n"
+    '"/>\n</LyricInfo>\n</QrcInfos>'
+)
+
+
+def test_map_words_reads_the_qrc_sheet():
+    class _Lyric:
+        lyric = _QRC
+
+    words = map_words(_Lyric())
+
+    # The header tags are not sung lines.
+    assert [line["text"] for line in words] == ["稻香 (Jay)", "对&"]
+    first = words[0]
+    assert (first["start"], first["duration"]) == (0, 7730)
+    assert first["words"][0] == {"start": 0, "duration": 552, "text": "稻"}
+    # A space is a timed word of its own here; a bracket is a word too.
+    assert [w["text"] for w in first["words"]] == ["稻", "香", " ", "(", "Jay", ")"]
+    assert first["words"][-1] == {"start": 7176, "duration": 552, "text": ")"}
+
+
+def test_map_words_is_empty_for_a_track_without_qrc():
+    # Upstream answers the plain LRC when a track has no word timing.
+    class _Lyric:
+        lyric = "[00:00.00]稻香"
+
+    assert map_words(_Lyric()) == []
+
+
+def test_map_words_refuses_a_malformed_line():
+    class _Lyric:
+        # Text after the last cue has no timing of its own.
+        lyric = _QRC.replace("&amp;(8330,600)", "&amp;(8330,600)尾")
+
+    with pytest.raises(ValueError):
+        map_words(_Lyric())
 
 
 def test_success_envelope_carries_schema_version():

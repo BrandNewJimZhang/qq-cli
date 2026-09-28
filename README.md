@@ -85,7 +85,7 @@ publishes).
 |----------------|--------------|
 | `search`       | `[{id, title, artist, album, cover, duration}]` — duration in **milliseconds** (QQ reports seconds; normalised so it matches netease-cli), `cover` an album-art URL or `""`, multiple singers joined with ` / ` |
 | `url`          | `{id, url, quality, bitrate}` — `quality` is the TIER that answered (`lossless` / `high` / `standard`), `bitrate` the kbps you are getting |
-| `lyric`        | `{id, lrc}` — LRC document, `""` when the track has none |
+| `lyric`        | `{id, lrc, words}` — LRC document (`""` when the track has none) and the word-timed sheet: `[{start, duration, text, words: [{start, duration, text}]}]`, ms from track start, `[]` when upstream has no word timing |
 | `whoami`       | `{logged_in, nickname, vip}` — server-verified session verdict (anonymous and rejected credentials both answer `logged_in: false`) |
 | `playlists`    | `[{id, title, cover, count, description}]` — the account's own shelf |
 | `playlist`     | `[{id, title, artist, album, cover, duration}]` — the SAME row `search` publishes, so a shelf is playable and queueable without a second shape |
@@ -171,8 +171,10 @@ poll on its own schedule. Poll until `done` (store the credential),
   are published for it, not verified against it.
 - **Reverse-engineered.** QQ Music publishes no personal-use API;
   upstream can change or break at any time.
-- **Line-level lyrics only.** The `qrc` word-level field is not
-  published.
+- **Word timing where upstream has it.** `words` is QQ's QRC, decrypted
+  by the library and fetched beside the LRC (asking for the QRC makes
+  upstream answer it in place of the LRC). Translation and romanisation
+  are not published.
 
 ## Legal notice
 

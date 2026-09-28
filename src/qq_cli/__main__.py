@@ -50,6 +50,7 @@ from qq_cli._mappers import (
     map_search,
     map_url,
     map_vip_info,
+    map_words,
     success_envelope,
 )
 
@@ -213,8 +214,18 @@ async def _run_lyric(mid: str) -> dict[str, Any]:
     from qqmusic_api.modules.lyric import LyricApi
 
     async with Client(_credential()) as client:
-        response = await LyricApi(client).get_lyric(mid)
-        return {"id": mid, "lrc": map_lyric(response)}
+        lyrics = LyricApi(client)
+
+        # The library answers a request object, awaitable but not a
+        # coroutine, so gather needs each wrapped in one.
+        async def fetch(*, qrc: bool) -> Any:
+            return await lyrics.get_lyric(mid, qrc=qrc)
+
+        # Two documents, fetched together: asking for the QRC makes
+        # upstream answer it IN PLACE of the LRC, and the LRC is still
+        # what a player falls back to for a track without word timing.
+        plain, timed = await asyncio.gather(fetch(qrc=False), fetch(qrc=True))
+        return {"id": mid, "lrc": map_lyric(plain), "words": map_words(timed)}
 
 
 async def _run_playlists() -> list[dict[str, Any]]:
