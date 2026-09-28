@@ -11,7 +11,6 @@ contract, not incidental.
 from __future__ import annotations
 
 import pytest
-
 from qq_cli._mappers import (
     QUALITY_TIERS,
     SCHEMA_VERSION,
@@ -23,12 +22,12 @@ from qq_cli._mappers import (
     map_credential,
     map_lyric,
     map_playlists,
-    map_words,
     map_qr,
     map_qr_status,
     map_search,
     map_url,
     map_vip_info,
+    map_words,
     success_envelope,
 )
 
